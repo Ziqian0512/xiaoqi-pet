@@ -31,6 +31,7 @@ from . import quiet_mode
 from . import vision as vision_mod
 from . import window_alerts
 from .agent_link import AgentLinkManager
+from .xiaoqi_link import XiaoqiLink
 from .overlay_settings_command import is_overlay_topology
 from .proactive import ProactiveScreenWatcher
 
@@ -383,6 +384,10 @@ class SharedAgentLinkManager(AgentLinkManager):
             return
         self._stopped = True
         try:
+            self.xiaoqi.stop()
+        except Exception:
+            pass
+        try:
             super().shutdown()
         except Exception:
             log.exception("关闭共享 Agent 管理器失败")
@@ -443,6 +448,10 @@ class SharedFullscreenWatcher(QObject):
             target=self._loop, daemon=True, name="pet-shared-fs-watch")
         self._thread.start()
         log.info("共享全屏监视线程已启动")
+        try:
+            self.xiaoqi.start()
+        except Exception:
+            log.exception("小祈联动启动失败")
 
     def stop(self) -> None:
         self._stop.set()
@@ -528,6 +537,8 @@ class SharedSubsystems:
 
     def __init__(self, shell) -> None:
         self.proxy = MultiWindowProxy(shell)
+        # G20：小祈联动（读 /api/body/feed 驱动动作与气泡）
+        self.xiaoqi = XiaoqiLink(self.proxy, shell.config)
         self.agent_link = SharedAgentLinkManager(self.proxy, shell.config)
         # 共享 watcher 的 cfg 是**进程级**配置（开关/白名单/额度/密钥都是全局面），
         # 只有宠物名要跟随当前身份：角色身份由壳的每宠视图给（见 pet_name）。
