@@ -27,9 +27,12 @@
 {
   "enabled": true,
   "base_url": "http://100.117.93.31:8787",
+  "token": "hk-xxx",
   "poll_seconds": 3
 }
 ```
+
+`token` 要和服务器 `budget.body.clients` 里的一条对上；公司那台用 `of-` 开头的（不给原文）。
 
 环境变量 `XIAOQI_CONF` 可以指定别的路径（测试用）。**默认是关闭的**：不放这个文件、
 或 `enabled: false`，就一直不连，不影响原来的桌宠行为。

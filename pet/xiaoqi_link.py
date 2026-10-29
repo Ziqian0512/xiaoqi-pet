@@ -30,11 +30,13 @@ class _Poller(QThread):
     got = Signal(object)          # dict: feed 数据
     failed = Signal(str)
 
-    def __init__(self, base_url: str, since: int, poll_seconds: float, parent=None) -> None:
+    def __init__(self, base_url: str, since: int, poll_seconds: float,
+                 token: str = "", parent=None) -> None:
         super().__init__(parent)
         self._base = base_url.rstrip("/")
         self._since = int(since)
         self._poll = max(1.0, float(poll_seconds))
+        self._token = token or ""
         self._stop = False
         self._backoff = 0.0
 
@@ -48,7 +50,10 @@ class _Poller(QThread):
         while not self._stop:
             url = "%s/api/body/feed?since=%d&limit=20" % (self._base, self._since)
             try:
-                req = urllib.request.Request(url, headers={"User-Agent": "xiaoqi-link/1.0"})
+                headers = {"User-Agent": "xiaoqi-link/1.0"}
+                if self._token:
+                    headers["X-Token"] = self._token
+                req = urllib.request.Request(url, headers=headers)
                 with urllib.request.urlopen(req, timeout=8) as resp:
                     data = json.loads(resp.read(200000))
                 self._backoff = 0.0
@@ -122,6 +127,7 @@ class XiaoqiLink(QObject):
             "enabled": bool(raw.get("enabled", False)),
             "base_url": str(raw.get("base_url") or DEFAULT_BASE).rstrip("/"),
             "poll_seconds": float(raw.get("poll_seconds") or DEFAULT_POLL),
+            "token": str(raw.get("token") or ""),
         }
 
     # ---- 生命周期 ----
@@ -130,7 +136,8 @@ class XiaoqiLink(QObject):
         if not conf["enabled"] or self._poller is not None:
             return
         self._since = 0
-        self._poller = _Poller(conf["base_url"], 0, conf["poll_seconds"], self)
+        self._poller = _Poller(conf["base_url"], 0, conf["poll_seconds"],
+                               token=str(conf.get("token") or ""), parent=self)
         self._poller.got.connect(self._on_feed)
         self._poller.start()
 
