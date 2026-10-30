@@ -46,6 +46,9 @@ def drop_strays():
 
 
 def import_model(path: str):
+    if path.lower().endswith(".blend"):
+        bpy.ops.wm.open_mainfile(filepath=path)
+        return
     if path.lower().endswith((".glb", ".gltf")):
         bpy.ops.import_scene.gltf(filepath=path)
     else:
@@ -173,6 +176,19 @@ def setup_light():
         pass
 
 
+def _iter_fcurves(act):
+    """Blender 5.x 的 Action 没有 .fcurves 了（slotted actions）。"""
+    try:
+        return list(act.fcurves)
+    except AttributeError:
+        curves = []
+        for layer in getattr(act, "layers", []):
+            for strip in getattr(layer, "strips", []):
+                for cb in getattr(strip, "channelbags", []):
+                    curves.extend(cb.fcurves)
+        return curves
+
+
 def add_procedural_idle(frames: int = 240, fps: int = 24):
     """临时的程序化待机：整体轻微起伏 + 微摆（等真动作素材到位就删掉）。"""
     arm = next((o for o in bpy.context.scene.objects if o.type == "ARMATURE"), None)
@@ -213,7 +229,16 @@ def main():
             sc.frame_start = int(fr[0])
             end = int(fr[0]) + FRAMES - 1 if FRAMES > 1 else int(fr[1])
             sc.frame_end = min(end, int(fr[1]))
-            print("动作:", act.name, "帧", sc.frame_start, "..", sc.frame_end)
+            # 锁住水平位移（桌宠窗口跟不了她走），只保留上下起伏
+            for fc in _iter_fcurves(act):
+                if fc.data_path.endswith("location") and ("Root" in fc.data_path or "Hips" in fc.data_path):
+                    if fc.array_index in (0, 1):
+                        for kp in fc.keyframe_points:
+                            kp.co[1] = 0.0
+                            kp.handle_left[1] = 0.0
+                            kp.handle_right[1] = 0.0
+            print("动作:", act.name, "帧", sc.frame_start, "..", sc.frame_end,
+                  "（已锁水平位移）")
 
     if os.environ.get("XIAOQI_ANIM") == "idle":
         add_procedural_idle(FRAMES if FRAMES > 1 else 240)
