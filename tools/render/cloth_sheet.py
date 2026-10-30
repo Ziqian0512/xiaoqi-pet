@@ -1,0 +1,15 @@
+﻿from PIL import Image
+import glob
+frames = sorted(glob.glob(r"E:\dsh-pet-projects\build\cloth-test\f_*.png"))
+print("帧数", len(frames))
+pick = [frames[i] for i in (0, 12, 24, 36, 47)]
+ims = []
+for f in pick:
+    im = Image.open(f).convert("RGBA").resize((320,180), Image.LANCZOS)
+    bg = Image.new("RGBA", im.size, (28,32,40,255))
+    ims.append(Image.alpha_composite(bg, im).convert("RGB"))
+sheet = Image.new("RGB", (320*5, 180))
+for i, im in enumerate(ims):
+    sheet.paste(im, (i*320, 0))
+sheet.save(r"E:\dsh-pet-projects\build\cloth-sheet.png")
+print("ok")
