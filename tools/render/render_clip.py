@@ -205,6 +205,51 @@ def add_procedural_idle(frames: int = 240, fps: int = 24):
         arm.keyframe_insert("rotation_euler", frame=f)
 
 
+def hair_sway(frames: int = 240, fps: int = 24, amp: float = 0.10):
+    """给发束骨加滞后摆动（近似惯性），没有布料/物理也能看出"头发跟着动"。"""
+    import math as _m
+    arm = next((o for o in bpy.context.scene.objects if o.type == "ARMATURE"), None)
+    if arm is None or not arm.animation_data:
+        return
+    for pb in arm.pose.bones:
+        if not pb.name.startswith("hair_"):
+            continue
+        seg = int(pb.name.rsplit("_", 1)[-1])
+        swing = amp * (0.4 + 0.35 * seg)      # 越靠发梢幅度越大
+        pb.rotation_mode = "XYZ"
+        for f in range(1, frames + 1):
+            t = (f - 1) / frames
+            pb.rotation_euler = (
+                swing * _m.sin(2 * _m.pi * t + 0.9 * seg),
+                0.0,
+                swing * 0.35 * _m.cos(2 * _m.pi * t + 0.5 * seg),
+            )
+            pb.keyframe_insert("rotation_euler", frame=f)
+
+
+def skirt_sway(frames: int = 240, amp: float = 0.035):
+    """裙摆摆动：给裙骨加小幅滞后摆动（比布料稳定，320px 下够看）。"""
+    import math as _m
+    arm = next((o for o in bpy.context.scene.objects if o.type == "ARMATURE"), None)
+    if arm is None or not arm.animation_data:
+        return
+    for pb in arm.pose.bones:
+        if not pb.name.startswith("skirt_"):
+            continue
+        seg = 1 if pb.name.endswith("_b") else 0
+        swing = amp * (0.5 + 0.5 * seg)
+        pb.rotation_mode = "XYZ"
+        for f in range(1, frames + 1):
+            t = (f - 1) / frames
+            phase = 0.7 * (hash(pb.name) % 7)
+            pb.rotation_euler = (
+                swing * _m.sin(2 * _m.pi * t + phase),
+                0.0,
+                swing * 0.6 * _m.cos(2 * _m.pi * t + phase * 0.5),
+            )
+            pb.keyframe_insert("rotation_euler", frame=f)
+
+
 def main():
     clean_scene()
     import_model(SRC)
@@ -239,6 +284,12 @@ def main():
                             kp.handle_right[1] = 0.0
             print("动作:", act.name, "帧", sc.frame_start, "..", sc.frame_end,
                   "（已锁水平位移）")
+
+    if os.environ.get("XIAOQI_SKIRT_SWAY") == "1":
+        skirt_sway(FRAMES if FRAMES > 1 else 240)
+
+    if os.environ.get("XIAOQI_HAIR_SWAY") == "1":
+        hair_sway(FRAMES if FRAMES > 1 else 240)
 
     if os.environ.get("XIAOQI_ANIM") == "idle":
         add_procedural_idle(FRAMES if FRAMES > 1 else 240)
