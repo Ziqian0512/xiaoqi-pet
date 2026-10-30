@@ -84,3 +84,4 @@ android/**/build/
 *.keystore
 *.jks
 dist-android/
+.venv/
