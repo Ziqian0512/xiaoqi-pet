@@ -1395,6 +1395,12 @@ class AppShell:
         from .multi_window_shared import SharedSubsystems
 
         self._shared = SharedSubsystems(self)  # 4.4b：常开化（T6）
+        # G20：小祈联动在壳构造时就起——overlay 拓扑下 SharedSubsystems.start()
+        # 不会被调用，挂在 start() 里会永远不启动（2026-10-30 实测）。
+        try:
+            self._shared.xiaoqi.start()
+        except Exception:  # noqa: BLE001
+            logging.exception("xiaoqi: 联动启动失败")
         # 订阅 DSH 统一状态（单读方合并后由共享 Agent 联动管理器转发；收敛逻辑
         # 是 pet/dsh_state.py 的纯函数，读方是 DshMonitor 自己）：
         # thinking/attention 注入与 offline 交互收口在管理器内部完成，这里只

@@ -10,6 +10,7 @@ G20 §5.2 的约束：
 from __future__ import annotations
 
 import json
+import logging
 import time
 from datetime import datetime
 import urllib.error
@@ -18,6 +19,8 @@ import urllib.request
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from . import xiaoqi_logic as logic
+
+log = logging.getLogger(__name__)
 
 DEFAULT_BASE = "http://100.117.93.31:8787"
 DEFAULT_POLL = 3.0
@@ -107,6 +110,11 @@ class XiaoqiLink(QObject):
         if env:
             return env
         base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        # 装好的版本是 dsh-pet-standalone-webm-chat；源码跑是 dsh-pet-standalone
+        for name in ("dsh-pet-standalone-webm-chat", "dsh-pet-standalone"):
+            path = os.path.join(base, name, "xiaoqi.json")
+            if os.path.isfile(path):
+                return path
         return os.path.join(base, "dsh-pet-standalone-webm-chat", "xiaoqi.json")
 
     def _conf(self) -> dict:
@@ -133,7 +141,10 @@ class XiaoqiLink(QObject):
     # ---- 生命周期 ----
     def start(self) -> None:
         conf = self._conf()
+        log.info("xiaoqi: start() 被调用 enabled=%s base=%s conf_path=%s",
+                 conf["enabled"], conf["base_url"], self._conf_path())
         if not conf["enabled"] or self._poller is not None:
+            log.info("xiaoqi: 跳过启动（enabled=%s, poller=%s）", conf["enabled"], self._poller is not None)
             return
         self._since = 0
         self._poller = _Poller(conf["base_url"], 0, conf["poll_seconds"],
@@ -158,6 +169,8 @@ class XiaoqiLink(QObject):
     # ---- 收数据 ----
     def _on_feed(self, data: dict) -> None:
         try:
+            log.info("xiaoqi: 收到 feed items=%d last_id=%s", len(data.get("items") or []),
+                     data.get("last_id"))
             now = logic.parse_ts(data.get("now", {}).get("ts") or "") or datetime.now()
             rules = data.get("rules") or {}
             fresh = int(rules.get("fresh_seconds") or 300)
@@ -181,6 +194,7 @@ class XiaoqiLink(QObject):
                     self.acted.emit(str((it.get("extra") or {}).get("action") or ""))
             self._flush_queue()
         except Exception:  # noqa: BLE001
+            log.exception("xiaoqi: 处理 feed 失败")
             return
 
     # ---- 表现 ----
@@ -189,6 +203,7 @@ class XiaoqiLink(QObject):
             cats = getattr(self.win, "cats", None)
             return cats if isinstance(cats, dict) else {}
         except Exception:  # noqa: BLE001
+            log.exception("xiaoqi: 处理 feed 失败")
             return {}
 
     def _play_quadrant(self, quadrant: str) -> None:
@@ -223,6 +238,7 @@ class XiaoqiLink(QObject):
                 return
             self.win.request_link_anim(clip)
         except Exception:  # noqa: BLE001
+            log.exception("xiaoqi: 处理 feed 失败")
             return
 
     def _on_heard(self, rules: dict) -> None:
