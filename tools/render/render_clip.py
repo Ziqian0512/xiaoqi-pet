@@ -19,7 +19,7 @@ OUT = ARGS[1]
 FRAMES = int(ARGS[2]) if len(ARGS) > 2 else 1
 START = int(ARGS[3]) if len(ARGS) > 3 else 1
 
-W, H = 640, 360
+W, H = 1280, 720
 
 
 def clean_scene():
@@ -27,22 +27,29 @@ def clean_scene():
 
 
 def drop_strays():
-    """删掉不属于角色的多余网格（Tripo 的 GLB 里混了一个 Icosphere）。"""
+    """删掉不属于角色的网格（Tripo 偶尔塞一个 Icosphere）。
+
+    规则：有骨架修改器、或父级是骨架、或顶点数 > 200 且不是球状杂物 → 保留。
+    简单可靠：保留「有 Armature 修改器」或「父级为 ARMATURE」的网格；
+    若一个都没有（未绑定模型），则保留顶点最多的那个。
+    """
+    arm = next((o for o in bpy.context.scene.objects if o.type == "ARMATURE"), None)
+    meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
     keep = set()
-    for ob in bpy.context.scene.objects:
-        if ob.type == "MESH" and ob.parent and ob.parent.type == "ARMATURE":
-            keep.add(ob.name)
-        elif ob.type == "MESH":
-            has_arm_mod = any(m.type == "ARMATURE" for m in ob.modifiers)
-            if has_arm_mod:
+    if arm is not None:
+        for ob in meshes:
+            if ob.parent is arm or any(m.type == "ARMATURE" for m in ob.modifiers):
                 keep.add(ob.name)
+    if not keep and meshes:
+        meshes.sort(key=lambda o: len(o.data.vertices), reverse=True)
+        keep.add(meshes[0].name)
     removed = []
-    for ob in list(bpy.context.scene.objects):
-        if ob.type == "MESH" and ob.name not in keep:
+    for ob in meshes:
+        if ob.name not in keep:
             removed.append(ob.name)
             bpy.data.objects.remove(ob, do_unlink=True)
     if removed:
-        print("删掉多余网格:", removed)
+        print("删掉非角色网格:", removed, "| 保留", len(keep), "个")
 
 
 def import_model(path: str):
@@ -126,8 +133,9 @@ def setup_render():
                 break
             except TypeError:
                 continue
-    sc.render.resolution_x = W * 2
-    sc.render.resolution_y = H * 2
+    ss = int(os.environ.get("XIAOQI_SUPERSAMPLE", "1"))
+    sc.render.resolution_x = W * ss
+    sc.render.resolution_y = H * ss
     sc.render.resolution_percentage = 100
     sc.render.film_transparent = True
     sc.render.image_settings.file_format = "PNG"
@@ -209,8 +217,10 @@ def hair_sway(frames: int = 240, fps: int = 24, amp: float = 0.10):
     """给发束骨加滞后摆动（近似惯性），没有布料/物理也能看出"头发跟着动"。"""
     import math as _m
     arm = next((o for o in bpy.context.scene.objects if o.type == "ARMATURE"), None)
-    if arm is None or not arm.animation_data:
+    if arm is None:
         return
+    if arm.animation_data is None:
+        arm.animation_data_create()
     for pb in arm.pose.bones:
         if not pb.name.startswith("hair_"):
             continue
@@ -227,12 +237,14 @@ def hair_sway(frames: int = 240, fps: int = 24, amp: float = 0.10):
             pb.keyframe_insert("rotation_euler", frame=f)
 
 
-def skirt_sway(frames: int = 240, amp: float = 0.035):
+def skirt_sway(frames: int = 240, amp: float = 0.018):
     """裙摆摆动：给裙骨加小幅滞后摆动（比布料稳定，320px 下够看）。"""
     import math as _m
     arm = next((o for o in bpy.context.scene.objects if o.type == "ARMATURE"), None)
-    if arm is None or not arm.animation_data:
+    if arm is None:
         return
+    if arm.animation_data is None:
+        arm.animation_data_create()
     for pb in arm.pose.bones:
         if not pb.name.startswith("skirt_"):
             continue
@@ -248,6 +260,26 @@ def skirt_sway(frames: int = 240, amp: float = 0.035):
                 swing * 0.6 * _m.cos(2 * _m.pi * t + phase * 0.5),
             )
             pb.keyframe_insert("rotation_euler", frame=f)
+
+
+def body_idle(frames: int = 240, amp: float = 0.006):
+    """没有动捕时，给整体加一点呼吸起伏（Hips 上下 + 轻微左右）。"""
+    import math as _m
+    arm = next((o for o in bpy.context.scene.objects if o.type == "ARMATURE"), None)
+    if arm is None:
+        return
+    if arm.animation_data is None:
+        arm.animation_data_create()
+    pb = arm.pose.bones.get("J_Bip_C_Hips") or arm.pose.bones.get("mixamorig:Hips")
+    if pb is None:
+        return
+    base = pb.location.copy()
+    for f in range(1, frames + 1):
+        t = (f - 1) / frames
+        pb.location = (base.x + amp * 0.4 * _m.sin(2 * _m.pi * t),
+                       base.y,
+                       base.z + amp * _m.sin(2 * _m.pi * t))
+        pb.keyframe_insert("location", frame=f)
 
 
 def main():
@@ -284,6 +316,9 @@ def main():
                             kp.handle_right[1] = 0.0
             print("动作:", act.name, "帧", sc.frame_start, "..", sc.frame_end,
                   "（已锁水平位移）")
+
+    if os.environ.get("XIAOQI_BODY_IDLE") == "1":
+        body_idle(FRAMES if FRAMES > 1 else 240)
 
     if os.environ.get("XIAOQI_SKIRT_SWAY") == "1":
         skirt_sway(FRAMES if FRAMES > 1 else 240)
