@@ -169,8 +169,10 @@ class XiaoqiLink(QObject):
     # ---- 收数据 ----
     def _on_feed(self, data: dict) -> None:
         try:
-            log.info("xiaoqi: 收到 feed items=%d last_id=%s", len(data.get("items") or []),
-                     data.get("last_id"))
+            _items = data.get("items") or []
+            if _items:
+                log.info("xiaoqi: 收到 feed items=%d last_id=%s", len(_items),
+                         data.get("last_id"))
             now = logic.parse_ts(data.get("now", {}).get("ts") or "") or datetime.now()
             rules = data.get("rules") or {}
             fresh = int(rules.get("fresh_seconds") or 300)
